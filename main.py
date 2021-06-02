@@ -23,6 +23,13 @@ score = 0
 # Colors
 BG = (23, 146, 100)
 
+#define font
+font = pygame.font.SysFont('Futura', 30)
+
+def draw_text(text, font, text_col, x, y):
+    img = font.render(text, True, text_col)
+    screen.blit(img, (x, y))
+
 #Images
 BG_LST = []
 for i in range(len(os.listdir("bg"))):
@@ -37,6 +44,19 @@ for i in range(49):
 CRISTAL_LST = [pygame.transform.scale(pygame.image.load(f"cristals/{x+1}.png").convert_alpha(), (40, 40))
                for x in range(len(os.listdir("cristals")))]
 
+RESTART_BUTTON = pygame.image.load("Buttons/restart.png").convert_alpha().set_colorkey((252, 253, 255))
+
+def restart():
+    global dead, score
+    dead = False
+    score = 0
+    cristal_group.empty()
+    for i in range(random.randint(5, 10)):
+        cristal = Cristal((random.randint(0, X_RES), random.randint(0, Y_RES)))
+        planet_group.add(cristal)
+    groups.append(cristal_group)
+    player = Ship()
+    player_group.add(player)
 
 def rotate(surface, angle):
     rotated_surface = pygame.transform.rotozoom(surface, angle, 1)
@@ -53,17 +73,19 @@ def draw_bg():
                                   int(y * img.get_height() - 500 + scroll_con * gravity_y + position_y)))
 
 class Ship(pygame.sprite.Sprite):
-    def __init__(self):
+    def __init__(self, position: tuple = (SCREEN_SIZE[0]//2, SCREEN_SIZE[1]//2)):
         super().__init__()
         self.master_image = pygame.image.load("Ship/Ship6.png").convert_alpha()
         #self.rect = self.master_image.get_rect(center=[x // 2 for x in SCREEN_SIZE])
         self.angle = 0
         self.image, self.rect = rotate(self.master_image, self.angle)
+        self.rect.center = position
         self.max_speed = 0.2
         self.turn_speed = 0.1
         self.acceleration = .0001
 
         # initial parameters
+        self.invincible = True
         self.position_vector = pygame.math.Vector2(self.rect.center)
         self.speed = 0
         self.acceleration_sign = 0
@@ -82,20 +104,23 @@ class Ship(pygame.sprite.Sprite):
         self.image, self.rect = rotate(self.master_image, self.angle)
         self.rect.center = self.position_vector
         self.check_score()
-        self.check_dead()
+        if not self.invincible:
+            self.check_dead()
 
     def check_score(self):
         global score
         for cristal in cristal_group:
             if self.rect.colliderect(cristal.rect):
                 score += 1
-                twinkel = Explosion(cristal.rect.centerx, cristal.rect.centery)
+                twinkel = Explosion(cristal.rect.centerx, cristal.rect.centery, 0.5)
                 twinkel_group.add(twinkel)
                 cristal.kill()
                 print(score)
 
     def check_dead(self):
-        if pygame.sprite.spritecollide(self, planet_group, False):
+        global dead
+        if pygame.sprite.spritecollide(self, planet_group, False, pygame.sprite.collide_mask):
+            dead = True
             boom = Explosion(self.rect.centerx, self.rect.centery, 3)
             explosion_group.add(boom)
             self.kill()
@@ -113,15 +138,16 @@ class Planet(pygame.sprite.Sprite):
         self.image = random.choice(PLANET_LST)
         self.image = pygame.transform.scale(self.image, (int(self.image.get_width() * size), int(self.image.get_height() * size)))
         self.rect = self.image.get_rect(center=(random.randint(0, X_RES), random.randint(0, Y_RES)))
+        self.mask = pygame.mask.from_surface(self.image)
         self.vector = pygame.math.Vector2(self.rect.center)
         self.radius = self.rect.width // 2
 
         #Intial Parameters
-        self.vx, self.vy = random.gauss(0, 0.04), random.gauss(0, 0.04)
+        self.vx, self.vy = random.gauss(0, 0.08), random.gauss(0, 0.08)
 
     def update(self, dt):
-        self.vx -= gravity_x / 1e8 * dt
-        self.vy -= gravity_y / 1e8 * dt
+        self.vx -= gravity_x / 1e6 * dt
+        self.vy -= gravity_y / 1e6 * dt
         dx = self.vx * dt
         dy = self.vy * dt
         if self.rect.left + dx <= 0:
@@ -163,8 +189,8 @@ class Explosion(pygame.sprite.Sprite):
         self.frame_index = 0
         self.image = self.images[self.frame_index]
         self.rect = self.image.get_rect()
-        self.start_x = x + 0.05 * 8 * gravity_x
-        self.start_y = y + 0.05 * 8 * gravity_y
+        self.start_x = x# + 0.05 * 8 * gravity_x
+        self.start_y = y# + 0.05 * 8 * gravity_y
         self.rect.center = (self.start_x, self.start_y)
         self.counter = 0
 
@@ -187,6 +213,35 @@ class Explosion(pygame.sprite.Sprite):
                 self.image = self.images[self.frame_index]
 
 
+class Button:
+    def __init__(self, x, y, image, scale):
+        width = image.get_width()
+        height = image.get_height()
+        self.image = pygame.transform.scale(image, (int(width * scale), int(height * scale)))
+        self.rect = self.image.get_rect(center=(x, y))
+        self.clicked = False
+
+    def draw(self, surface):
+        action = False
+
+        # get mouse position
+        pos = pygame.mouse.get_pos()
+
+        # check mouseover and clicked conditions
+        if self.rect.collidepoint(pos):
+            if pygame.mouse.get_pressed()[0] and not self.clicked:
+                action = True
+                self.clicked = True
+
+        if not pygame.mouse.get_pressed()[0]:
+            self.clicked = False
+
+        # draw button
+        surface.blit(self.image, (self.rect.x, self.rect.y))
+
+        return action
+
+
 # Groups
 groups = []
 planet_group = pygame.sprite.Group()
@@ -199,15 +254,26 @@ player_group = pygame.sprite.GroupSingle()
 player = Ship()
 player_group.add(player)
 
-for i in range(random.randint(10, 20)):
+# Spawn planets
+for i in range(random.randint(8, 15)):
     planet = Planet()
     planet_group.add(planet)
 groups.append(planet_group)
 
+# Spawn starting cristals
+for i in range(random.randint(5, 10)):
+    cristal = Cristal((random.randint(0, X_RES), random.randint(0, Y_RES)))
+    planet_group.add(cristal)
+groups.append(cristal_group)
+
+# Event creation
 CRISTAL_EVENT = pygame.USEREVENT + 1
-pygame.time.set_timer(CRISTAL_EVENT, 5000)
+INVINCIBLE_EVENT = pygame.USEREVENT + 2
+pygame.time.set_timer(CRISTAL_EVENT, 3000)
+pygame.time.set_timer(INVINCIBLE_EVENT, 7000)
 
 time = pygame.time.get_ticks()
+dead = False
 clicked = False
 running = True
 while running:
@@ -225,9 +291,13 @@ while running:
         elif event.type == CRISTAL_EVENT:
             cristal = Cristal((random.randint(0, X_RES), random.randint(0, Y_RES)))
             cristal_group.add(cristal)
+        elif event.type == INVINCIBLE_EVENT:
+            player.invincible = False
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 running = False
+            if dead and event.key == pygame.K_r:
+                restart()
             if event.key in [pygame.K_LEFT, pygame.K_a]:
                 player.turn_dir += 1
             if event.key in [pygame.K_RIGHT, pygame.K_d]:
@@ -266,7 +336,13 @@ while running:
     player_group.draw(screen)
     planet_group.draw(screen)
     explosion_group.draw(screen)
-        
+    draw_text(f"Score: {score}", font, "white", 10, 10)
+
+    if dead:
+        button = Button(SCREEN_SIZE[0]//2, SCREEN_SIZE[1]//2,
+                        RESTART_BUTTON, 1)
+        if button.draw(screen):
+            restart()
 
     pygame.display.update()
     clock.tick(FPS)
