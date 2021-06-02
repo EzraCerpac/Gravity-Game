@@ -44,17 +44,16 @@ for i in range(49):
 CRISTAL_LST = [pygame.transform.scale(pygame.image.load(f"cristals/{x+1}.png").convert_alpha(), (40, 40))
                for x in range(len(os.listdir("cristals")))]
 
-RESTART_BUTTON = pygame.image.load("Buttons/restart.png").convert_alpha().set_colorkey((252, 253, 255))
+RESTART_BUTTON = pygame.image.load("Buttons/restart.png").convert_alpha()
 
 def restart():
-    global dead, score
+    global dead, score, player
     dead = False
     score = 0
     cristal_group.empty()
     for i in range(random.randint(5, 10)):
         cristal = Cristal((random.randint(0, X_RES), random.randint(0, Y_RES)))
-        planet_group.add(cristal)
-    groups.append(cristal_group)
+        cristal_group.add(cristal)
     player = Ship()
     player_group.add(player)
 
@@ -106,6 +105,8 @@ class Ship(pygame.sprite.Sprite):
         self.check_score()
         if not self.invincible:
             self.check_dead()
+        else:
+            draw_text("Protected", font, "white", self.rect.centerx-60, self.rect.centery-80)
 
     def check_score(self):
         global score
@@ -143,25 +144,29 @@ class Planet(pygame.sprite.Sprite):
         self.radius = self.rect.width // 2
 
         #Intial Parameters
-        self.vx, self.vy = random.gauss(0, 0.08), random.gauss(0, 0.08)
+        self.vx, self.vy = random.gauss(0, 0.07), random.gauss(0, 0.8)
 
     def update(self, dt):
-        self.vx -= gravity_x / 1e6 * dt
-        self.vy -= gravity_y / 1e6 * dt
+        self.vx -= gravity_x / 1e7 * dt
+        self.vy -= gravity_y / 1e7 * dt
         dx = self.vx * dt
         dy = self.vy * dt
+
+        # Wall colission
+        damping = 0.95
         if self.rect.left + dx <= 0:
             dx = -self.rect.left
-            self.vx *= -1
+            self.vx *= -1 * damping
         elif self.rect.right + dx >= X_RES:
             dx = X_RES - self.rect.right
-            self.vx *= -1
+            self.vx *= -1 * damping
         if self.rect.top + dy <= 0:
             dy = -self.rect.top
-            self.vy *= -1
+            self.vy *= -1 * damping
         elif self.rect.bottom + dy >= Y_RES:
             dy = Y_RES - self.rect.bottom
-            self.vy *= -1
+            self.vy *= -1 * damping
+
         self.rect.x += int(dx)
         self.rect.y += int(dy)
 
@@ -263,7 +268,7 @@ groups.append(planet_group)
 # Spawn starting cristals
 for i in range(random.randint(5, 10)):
     cristal = Cristal((random.randint(0, X_RES), random.randint(0, Y_RES)))
-    planet_group.add(cristal)
+    cristal_group.add(cristal)
 groups.append(cristal_group)
 
 # Event creation
@@ -333,8 +338,8 @@ while running:
     explosion_group.update()
     cristal_group.draw(screen)
     twinkel_group.draw(screen)
-    player_group.draw(screen)
     planet_group.draw(screen)
+    player_group.draw(screen)
     explosion_group.draw(screen)
     draw_text(f"Score: {score}", font, "white", 10, 10)
 
