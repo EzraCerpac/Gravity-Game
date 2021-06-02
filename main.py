@@ -11,26 +11,28 @@ SCREEN_SIZE = (X_RES, Y_RES)
 screen = pygame.display.set_mode(SCREEN_SIZE, RESIZABLE, 32)
 clock = pygame.time.Clock()
 
-
-#Game not so constants
+# Game not so constants
 FPS = 60
 SIZE = 2
 gravity_x, gravity_y = 0, 0
 scroll_x, scroll_y = 0, 0
 position_x, position_y = 0, 0
 score = 0
+high_score = 0
 
 # Colors
 BG = (23, 146, 100)
 
-#define font
+# define font
 font = pygame.font.SysFont('Futura', 30)
+
 
 def draw_text(text, font, text_col, x, y):
     img = font.render(text, True, text_col)
     screen.blit(img, (x, y))
 
-#Images
+
+# Images
 BG_LST = []
 for i in range(len(os.listdir("bg"))):
     BG_LST.append(pygame.image.load(f'bg/bkgd_{i}.png').convert_alpha())
@@ -41,21 +43,26 @@ for i in range(49):
     if os.path.exists(file):
         PLANET_LST.append(pygame.image.load(file).convert_alpha())
 
-CRISTAL_LST = [pygame.transform.scale(pygame.image.load(f"cristals/{x+1}.png").convert_alpha(), (40, 40))
+CRISTAL_LST = [pygame.transform.scale(pygame.image.load(f"cristals/{x + 1}.png").convert_alpha(), (40, 40))
                for x in range(len(os.listdir("cristals")))]
 
 RESTART_BUTTON = pygame.image.load("Buttons/restart.png").convert_alpha()
 
+
 def restart():
-    global dead, score, player
+    global dead, score, new_high_score, player
     dead = False
     score = 0
+    new_high_score = False
     cristal_group.empty()
     for i in range(random.randint(5, 10)):
         cristal = Cristal((random.randint(0, X_RES), random.randint(0, Y_RES)))
         cristal_group.add(cristal)
     player = Ship()
     player_group.add(player)
+    explosion = Explosion(player.rect.centerx, player.rect.centery, 4)
+    explosion_group.add(explosion)
+
 
 def rotate(surface, angle):
     rotated_surface = pygame.transform.rotozoom(surface, angle, 1)
@@ -71,15 +78,16 @@ def draw_bg():
                 screen.blit(img, (int(x * img.get_width() - 500 + scroll_con * gravity_x + position_x),
                                   int(y * img.get_height() - 500 + scroll_con * gravity_y + position_y)))
 
+
 class Ship(pygame.sprite.Sprite):
-    def __init__(self, position: tuple = (SCREEN_SIZE[0]//2, SCREEN_SIZE[1]//2)):
+    def __init__(self, position: tuple = (SCREEN_SIZE[0] // 2, SCREEN_SIZE[1] // 2)):
         super().__init__()
         self.master_image = pygame.image.load("Ship/Ship6.png").convert_alpha()
-        #self.rect = self.master_image.get_rect(center=[x // 2 for x in SCREEN_SIZE])
         self.angle = 0
         self.image, self.rect = rotate(self.master_image, self.angle)
+        self.mask = pygame.mask.from_surface(self.image)
         self.rect.center = position
-        self.max_speed = 0.2
+        self.max_speed = 0.25
         self.turn_speed = 0.1
         self.acceleration = .0001
 
@@ -98,25 +106,39 @@ class Ship(pygame.sprite.Sprite):
             self.speed = self.max_speed
         elif self.speed < 0:
             self.speed = 0
-        self.speed_vector = pygame.math.Vector2(self.speed * cos(-radians(self.angle)), self.speed * sin(-radians(self.angle)))
+        self.speed_vector = pygame.math.Vector2(self.speed * cos(-radians(self.angle)),
+                                                self.speed * sin(-radians(self.angle)))
         self.position_vector += self.speed_vector * dt
         self.image, self.rect = rotate(self.master_image, self.angle)
+        self.mask = pygame.mask.from_surface(self.image)
+
+        #Screen boundry
+        if self.position_vector[0] - self.image.get_width() / 2 <= 0:
+            self.position_vector[0] = self.image.get_width() // 2
+        elif self.position_vector[0] + self.image.get_width() / 2 >= SCREEN_SIZE[0]:
+            self.position_vector[0] = SCREEN_SIZE[0] - self.image.get_width() // 2
+        if self.position_vector[1] - self.image.get_height() / 2 <= 0:
+            self.position_vector[1] = self.image.get_height() // 2
+        elif self.position_vector[1] + self.image.get_height() / 2 >= SCREEN_SIZE[1]:
+            self.position_vector[1] = SCREEN_SIZE[1] - self.image.get_height() // 2
+
         self.rect.center = self.position_vector
+
         self.check_score()
         if not self.invincible:
             self.check_dead()
         else:
-            draw_text("Protected", font, "white", self.rect.centerx-60, self.rect.centery-80)
+            draw_text("Protected", font, "white", self.rect.centerx - 60, self.rect.centery - 80)
 
     def check_score(self):
-        global score
-        for cristal in cristal_group:
-            if self.rect.colliderect(cristal.rect):
-                score += 1
-                twinkel = Explosion(cristal.rect.centerx, cristal.rect.centery, 0.5)
-                twinkel_group.add(twinkel)
-                cristal.kill()
-                print(score)
+        global score, high_score, new_high_score
+        for cristal in pygame.sprite.spritecollide(self, cristal_group, True, pygame.sprite.collide_mask):
+            score += 1
+            if score > high_score:
+                high_score = score
+                new_high_score = True
+            twinkel = Explosion(cristal.rect.centerx, cristal.rect.centery, 0.5)
+            twinkel_group.add(twinkel)
 
     def check_dead(self):
         global dead
@@ -126,25 +148,29 @@ class Ship(pygame.sprite.Sprite):
             explosion_group.add(boom)
             self.kill()
 
+
 class Cristal(pygame.sprite.Sprite):
     def __init__(self, position: tuple):
         super().__init__()
         self.image = random.choice(CRISTAL_LST)
         self.rect = self.image.get_rect(center=position)
+        self.mask = pygame.mask.from_surface(self.image)
+
 
 class Planet(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__()
         size = random.random() / 10 + 0.025
         self.image = random.choice(PLANET_LST)
-        self.image = pygame.transform.scale(self.image, (int(self.image.get_width() * size), int(self.image.get_height() * size)))
+        self.image = pygame.transform.scale(self.image,
+                                            (int(self.image.get_width() * size), int(self.image.get_height() * size)))
         self.rect = self.image.get_rect(center=(random.randint(0, X_RES), random.randint(0, Y_RES)))
         self.mask = pygame.mask.from_surface(self.image)
         self.vector = pygame.math.Vector2(self.rect.center)
         self.radius = self.rect.width // 2
 
-        #Intial Parameters
-        self.vx, self.vy = random.gauss(0, 0.07), random.gauss(0, 0.8)
+        # Intial Parameters
+        self.vx, self.vy = random.gauss(0, 0.07), random.gauss(0, 0.08)
 
     def update(self, dt):
         self.vx -= gravity_x / 1e7 * dt
@@ -181,7 +207,6 @@ class Planet(pygame.sprite.Sprite):
         #         plan.vx, plan.vy = m2.x, m2.y
 
 
-
 class Explosion(pygame.sprite.Sprite):
     def __init__(self, x, y, scale=1):
         pygame.sprite.Sprite.__init__(self)
@@ -194,8 +219,8 @@ class Explosion(pygame.sprite.Sprite):
         self.frame_index = 0
         self.image = self.images[self.frame_index]
         self.rect = self.image.get_rect()
-        self.start_x = x# + 0.05 * 8 * gravity_x
-        self.start_y = y# + 0.05 * 8 * gravity_y
+        self.start_x = x  # + 0.05 * 8 * gravity_x
+        self.start_y = y  # + 0.05 * 8 * gravity_y
         self.rect.center = (self.start_x, self.start_y)
         self.counter = 0
 
@@ -278,6 +303,7 @@ pygame.time.set_timer(CRISTAL_EVENT, 3000)
 pygame.time.set_timer(INVINCIBLE_EVENT, 7000)
 
 time = pygame.time.get_ticks()
+new_high_score = False
 dead = False
 clicked = False
 running = True
@@ -301,7 +327,7 @@ while running:
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 running = False
-            if dead and event.key == pygame.K_r:
+            if event.key == pygame.K_r:
                 restart()
             if event.key in [pygame.K_LEFT, pygame.K_a]:
                 player.turn_dir += 1
@@ -344,14 +370,14 @@ while running:
     draw_text(f"Score: {score}", font, "white", 10, 10)
 
     if dead:
-        button = Button(SCREEN_SIZE[0]//2, SCREEN_SIZE[1]//2,
-                        RESTART_BUTTON, 1)
+        if new_high_score:
+            draw_text(f"NEW HIGHSCORE!", font, "white", SCREEN_SIZE[0] // 2 - 130, SCREEN_SIZE[1] // 2 - 260)
+        draw_text(f"Highscore: {high_score}", font, "white", SCREEN_SIZE[0] // 2 - 80, SCREEN_SIZE[1] // 2 - 180)
+        button = Button(SCREEN_SIZE[0] // 2, SCREEN_SIZE[1] // 2, RESTART_BUTTON, 1)
         if button.draw(screen):
             restart()
 
     pygame.display.update()
     clock.tick(FPS)
 
-
 pygame.quit()
-
