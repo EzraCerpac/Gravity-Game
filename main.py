@@ -46,6 +46,12 @@ for i in range(49):
 CRISTAL_LST = [pygame.transform.scale(pygame.image.load(f"cristals/{x + 1}.png").convert_alpha(), (40, 40))
                for x in range(len(os.listdir("cristals")))]
 
+N_EXHAUST_LST = []
+T_EXHAUST_LST = []
+for i in range(4):
+    N_EXHAUST_LST.append(pygame.transform.scale2x(pygame.image.load(f"Ship/Exhaust/Normal_flight/Exhaust1/exhaust{i+1}.png")).convert_alpha())
+    T_EXHAUST_LST.append(pygame.transform.scale2x(pygame.image.load(f"Ship/Exhaust/Turbo_flight/Exhaust1/exhaust{i+1}.png")).convert_alpha())
+
 RESTART_BUTTON = pygame.image.load("Buttons/restart.png").convert_alpha()
 
 
@@ -91,6 +97,10 @@ class Ship(pygame.sprite.Sprite):
         self.turn_speed = 0.1
         self.acceleration = .0001
 
+        # initial exhaust
+        self.exhaust_index = 0
+        self.exhaust_img, self.exhaust_rect = rotate(T_EXHAUST_LST[self.exhaust_index], self.angle)
+
         # initial parameters
         self.invincible = True
         self.position_vector = pygame.math.Vector2(self.rect.center)
@@ -124,6 +134,8 @@ class Ship(pygame.sprite.Sprite):
 
         self.rect.center = self.position_vector
 
+        self.draw_exhaust()
+
         self.check_score()
         if not self.invincible:
             self.check_dead()
@@ -148,6 +160,24 @@ class Ship(pygame.sprite.Sprite):
             explosion_group.add(boom)
             self.kill()
 
+    def draw_exhaust(self):
+        self.exhaust_index += self.speed
+        if self.exhaust_index >= len(T_EXHAUST_LST):
+            self.exhaust_index = 0
+
+        if self.speed >= self.max_speed - 0.01:
+            self.exhaust_img, self.exhaust_rect = rotate(T_EXHAUST_LST[int(self.exhaust_index)], self.angle)
+        elif 0.01 < self.speed:
+            self.exhaust_img, self.exhaust_rect = rotate(N_EXHAUST_LST[int(self.exhaust_index)], self.angle)
+        else:
+            return None
+
+        dist = 70
+        self.exhaust_rect.center = (self.rect.centerx - dist * cos(-radians(self.angle)),
+                                    self.rect.centery - dist * sin(-radians(self.angle)))
+
+        screen.blit(self.exhaust_img, self.exhaust_rect)
+
 
 class Cristal(pygame.sprite.Sprite):
     def __init__(self, position: tuple):
@@ -169,7 +199,7 @@ class Planet(pygame.sprite.Sprite):
         self.vector = pygame.math.Vector2(self.rect.center)
         self.radius = self.rect.width // 2
 
-        # Intial Parameters
+        # Initial Parameters
         self.vx, self.vy = random.gauss(0, 0.07), random.gauss(0, 0.08)
 
     def update(self, dt):
@@ -197,14 +227,18 @@ class Planet(pygame.sprite.Sprite):
         self.rect.y += int(dy)
 
         # collisions
-        # for plan in planet_group:
-        #     if self.vector.distance_to(plan.vector) < self.radius + plan.radius and plan is not self:
-        #         print("hit")
-        #         nv = plan.vector - self.vector
-        #         m1 = pygame.math.Vector2(self.vx, self.vy).reflect(nv)
-        #         m2 = pygame.math.Vector2(plan.vx, plan.vy).reflect(nv)
-        #         self.vx, self.vy = m1.x, m1.y
-        #         plan.vx, plan.vy = m2.x, m2.y
+        self.vector = pygame.math.Vector2(self.rect.center)
+        for plan in planet_group:
+            if plan is not self:
+                if self.vector.distance_to(plan.vector) < self.radius + plan.radius:
+                    nv = plan.vector - self.vector
+                    if nv:
+                        m1 = pygame.math.Vector2(self.vx, self.vy).reflect(nv)
+                        m2 = pygame.math.Vector2(plan.vx, plan.vy).reflect(nv)
+                    self.vx, self.vy = m1.x, m1.y
+                    plan.vx, plan.vy = m2.x, m2.y
+                    self.rect.x += self.vx * dt
+                    self.rect.y += self.vy * dt
 
 
 class Explosion(pygame.sprite.Sprite):
@@ -287,7 +321,8 @@ player_group.add(player)
 # Spawn planets
 for i in range(random.randint(8, 15)):
     planet = Planet()
-    planet_group.add(planet)
+    if not pygame.sprite.spritecollideany(planet, planet_group):
+        planet_group.add(planet)
 groups.append(planet_group)
 
 # Spawn starting cristals
@@ -360,11 +395,11 @@ while running:
 
     twinkel_group.update()
     planet_group.update(dt)
-    player_group.update(dt)
     explosion_group.update()
     cristal_group.draw(screen)
     twinkel_group.draw(screen)
     planet_group.draw(screen)
+    player_group.update(dt)
     player_group.draw(screen)
     explosion_group.draw(screen)
     draw_text(f"Score: {score}", font, "white", 10, 10)
