@@ -1,31 +1,43 @@
-import pygame, random, os.path
+import pygame, random, os.path, shelve
 from pygame.locals import *
 from math import sin, cos, radians
 from sys import exit
+from time import sleep
 
 # TO DO: collisions between planets
 
 pygame.init()
+pygame.mixer.init()
+pygame.mixer.music.load("Sound/spaceinvaders1.mpeg")
+pygame.mixer.music.play(-1)
 X_RES, Y_RES = 1200, 1200
 SCREEN_SIZE = (X_RES, Y_RES)
 screen = pygame.display.set_mode(SCREEN_SIZE, RESIZABLE, 32)
 clock = pygame.time.Clock()
 
 # Game not so constants
-FPS = 60
+FPS = 30
 SIZE = 2
 gravity_x, gravity_y = 0, 0
 scroll_x, scroll_y = 0, 0
 position_x, position_y = 0, 0
 score = 0
-high_score = 0
+try:
+    with shelve.open("highscore") as r:
+        high_score = r['high_score']
+except:
+    high_score = 0
 
 # Colors
 BG = (23, 146, 100)
 
-# define font
+# Define font
 font = pygame.font.SysFont('Futura', 30)
 
+# Sound Effects
+DEADSFX = pygame.mixer.Sound("Sound/mixkit-arcade-space-shooter-dead-notification-272.wav")
+CRYSTALSFX = pygame.mixer.Sound("Sound/mixkit-quick-positive-video-game-notification-interface-265.wav")
+HSCORESFX = pygame.mixer.Sound("Sound/mixkit-completion-of-a-level-2063.wav")
 
 def draw_text(text, font, text_col, x, y):
     img = font.render(text, True, text_col)
@@ -84,6 +96,28 @@ def draw_bg():
                 screen.blit(img, (int(x * img.get_width() - 500 + scroll_con * gravity_x + position_x),
                                   int(y * img.get_height() - 500 + scroll_con * gravity_y + position_y)))
 
+
+def quit_game():
+    # Save thing
+    with shelve.open("highscore") as w:
+        w['high_score'] = high_score
+
+    # Music Fade
+    fade_time = 3     # s
+    pygame.mixer.music.fadeout(int(fade_time * 1000))
+
+    # Screen Fade
+    fade_rect = pygame.display.get_surface().get_rect()
+    fade_surf = pygame.Surface(fade_rect.size, flags=pygame.SRCALPHA)
+    for alpha in range(256):
+        fade_surf.fill((0, 0, 0, alpha))
+        screen.blit(fade_surf, fade_rect)
+        pygame.display.update()
+        sleep(fade_time / 100)
+
+    # quit
+    pygame.quit()
+    exit()
 
 class Ship(pygame.sprite.Sprite):
     def __init__(self, position: tuple = (SCREEN_SIZE[0] // 2, SCREEN_SIZE[1] // 2)):
@@ -146,6 +180,7 @@ class Ship(pygame.sprite.Sprite):
         global score, high_score, new_high_score
         for cristal in pygame.sprite.spritecollide(self, cristal_group, True, pygame.sprite.collide_mask):
             score += 1
+            CRYSTALSFX.play()
             if score > high_score:
                 high_score = score
                 new_high_score = True
@@ -156,6 +191,7 @@ class Ship(pygame.sprite.Sprite):
         global dead
         if pygame.sprite.spritecollide(self, planet_group, False, pygame.sprite.collide_mask):
             dead = True
+            DEADSFX.play()
             boom = Explosion(self.rect.centerx, self.rect.centery, 3)
             explosion_group.add(boom)
             self.kill()
@@ -230,15 +266,20 @@ class Planet(pygame.sprite.Sprite):
         self.vector = pygame.math.Vector2(self.rect.center)
         for plan in planet_group:
             if plan is not self:
-                if self.vector.distance_to(plan.vector) < self.radius + plan.radius:
+                if self.vector.distance_to(plan.vector) < (self.radius + plan.radius) * 1.01:
+                    self.rect.x -= 1.01 * int(dx)
+                    self.rect.y -= 1.01 * int(dy)
                     nv = plan.vector - self.vector
                     if nv:
                         m1 = pygame.math.Vector2(self.vx, self.vy).reflect(nv)
                         m2 = pygame.math.Vector2(plan.vx, plan.vy).reflect(nv)
-                    self.vx, self.vy = m1.x, m1.y
-                    plan.vx, plan.vy = m2.x, m2.y
-                    self.rect.x += self.vx * dt
-                    self.rect.y += self.vy * dt
+                        self.vx, self.vy = m1.x, m1.y
+                        plan.vx, plan.vy = m2.x, m2.y
+                    else:
+                        self.vx *= -1
+                        self.vy *= -1
+                    # self.rect.x += self.vx * dt
+                    # self.rect.y += self.vy * dt
 
 
 class Explosion(pygame.sprite.Sprite):
@@ -314,9 +355,8 @@ twinkel_group = pygame.sprite.Group()
 explosion_group = pygame.sprite.Group()
 groups.append(explosion_group)
 
-player_group = pygame.sprite.GroupSingle()
 player = Ship()
-player_group.add(player)
+player_group = pygame.sprite.GroupSingle(player)
 
 # Spawn planets
 for i in range(random.randint(8, 15)):
@@ -341,14 +381,13 @@ time = pygame.time.get_ticks()
 new_high_score = False
 dead = False
 clicked = False
-running = True
-while running:
+while True:
     dt = pygame.time.get_ticks() - time
     time = pygame.time.get_ticks()
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            running = False
+            quit_game()
         elif event.type == VIDEORESIZE:
             SCREEN_SIZE = event.size
             screen = pygame.display.set_mode(SCREEN_SIZE, RESIZABLE, 32)
@@ -361,7 +400,7 @@ while running:
             player.invincible = False
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                running = False
+                quit_game()
             if event.key == pygame.K_r:
                 restart()
             if event.key in [pygame.K_LEFT, pygame.K_a]:
@@ -406,6 +445,7 @@ while running:
 
     if dead:
         if new_high_score:
+            # HSCORESFX.play()
             draw_text(f"NEW HIGHSCORE!", font, "white", SCREEN_SIZE[0] // 2 - 130, SCREEN_SIZE[1] // 2 - 260)
         draw_text(f"Highscore: {high_score}", font, "white", SCREEN_SIZE[0] // 2 - 80, SCREEN_SIZE[1] // 2 - 180)
         button = Button(SCREEN_SIZE[0] // 2, SCREEN_SIZE[1] // 2, RESTART_BUTTON, 1)
