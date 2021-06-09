@@ -226,7 +226,7 @@ class Cristal(pygame.sprite.Sprite):
 class Planet(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__()
-        size = random.random() / 10 + 0.025
+        size = random.random() / 2.5 + 0.1
         self.image = random.choice(PLANET_LST)
         self.image = pygame.transform.scale(self.image,
                                             (int(self.image.get_width() * size), int(self.image.get_height() * size)))
